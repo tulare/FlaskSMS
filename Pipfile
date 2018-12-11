@@ -10,6 +10,3 @@ WTForms = "*"
 
 [dev-packages]
 ipython = "*"
-
-[requires]
-python_version = "3.7"
