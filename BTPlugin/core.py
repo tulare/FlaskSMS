@@ -1,9 +1,14 @@
 # -*- encoding: utf-8 -*-
 
-__all__ = ['list_devices']
+__all__ = [
+    'list_devices',
+    'BTNearbyDevices',
+    'BTClient'
+]
 
 import sys
 import time
+from datetime import datetime
 
 import contribs
 import bluetooth
@@ -33,6 +38,7 @@ class BTDevice(object) :
         self._addr = addr
         self._name = name
         self._classe = classe
+        self._lastseen = datetime.now()
 
     @property
     def addr(self) :
@@ -45,6 +51,10 @@ class BTDevice(object) :
     @property
     def classe(self) :
         return self._classe
+
+    @property
+    def lastseen(self) :
+        return self._lastseen
 
     def __repr__(self) :
         return "{}(addr='{}', name='{}', classe={})".format(
@@ -103,16 +113,24 @@ class BTNearbyDevices(object) :
         self._devices = []
         self.discover(duration=1)
 
-    def discover(self, duration=8, flush_cache=True) :
-        self._devices = [
+    def discover(self, duration=8) :
+        new_devices = [
             BTDevice(*dev)
             for dev in bluetooth.discover_devices(
                 duration=duration,
                 lookup_names=True,
-                lookup_class=True,
-                flush_cache=flush_cache
+                lookup_class=True
             )
         ]
+
+        self._devices = list(
+            filter(
+                lambda dv : dv.addr not in [ d.addr for d in new_devices ],
+                self._devices
+            )
+        )
+
+        self._devices.extend(new_devices)
 
     def get_addr_byname(self, name) :
         addr = None
@@ -125,7 +143,7 @@ class BTNearbyDevices(object) :
 
     def browse_services(self, uuid=None) :
         services = dict()
-        for dev in self.devices :
+        for dev in self._devices :
             services[dev.name] = [
                 BTService(*serv.values())
                 for serv in bluetooth.find_service(
