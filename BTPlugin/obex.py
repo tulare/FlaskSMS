@@ -4,6 +4,8 @@ from PyOBEX import client, responses
 from lxml import etree
 from io import BytesIO
 
+# use obextrans service
+
 class BrowserClient(object) :
 
     def __init__(self, addr, port) :
@@ -33,9 +35,14 @@ class BrowserClient(object) :
         self._cli = None
 
     def listdir(self) :
-        r, r_xml  = self._cli.listdir()
+        response = self._cli.listdir()
+
+        if isinstance(response, responses.FailureResponse) :
+            return { 'error' : 'failed to list directory', 'dirs' : None, 'files' : None }
+
+        headers, data = response
         
-        tree = etree.parse(BytesIO(r_xml))
+        tree = etree.parse(BytesIO(data))
 
         dirs = tree.xpath('//folder/@name')
         if len(tree.xpath('//parent-folder')) > 0 :
@@ -55,4 +62,32 @@ class BrowserClient(object) :
             return False
 
         return True
+
+    def put(self, name, data) :
+        response = self._cli.put(name, data)
+
+        if isinstance(response, responses.Success) :
+            return True
+
+        print(response)
+        return False
         
+    def get(self, name) :
+        response = self._cli.get(name)
+
+        if isinstance(response, responses.Not_Found) :
+            return b''
+
+        headers, data = response
+
+        for header in headers :
+            print(header)
+        return data
+
+    def delete(self, name) :
+        response = self._cli.delete(name)
+
+        if isinstance(response, responses.Success) :
+            return True
+
+        return False

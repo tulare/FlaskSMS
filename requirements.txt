@@ -1,3 +1,0 @@
-Flask
-WTForms
-lxml

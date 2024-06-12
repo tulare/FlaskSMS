@@ -5,13 +5,12 @@ Routes and views for the flask application.
 from datetime import datetime
 from os import environ
 
-from BTPlugin import list_devices
-from BTPlugin.core import BTNearbyDevices, BTClient 
-from BTPlugin import sms
+from BTPlugin import list_devices, BTNearbyDevices, BTClient, sms
 
+from markupsafe import Markup
 from flask import (
     request, redirect, url_for,
-    render_template, send_file, Markup,
+    render_template, send_file
 )
 from . import forms
 from . import app
