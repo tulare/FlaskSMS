@@ -66,12 +66,11 @@ def sendsms() :
 
     if request.method == 'POST' and form.validate() :
         try :
-            with BTClient(nearby.service_dialup(BT_PHONE)) as bt_client :
-                feedback = sms.send_sms_pdu(
-                    bt_client,
-                    numero=form.phoneno.data,
-                    message=form.textsms.data
-                )   
+            feedback = sms.send_sms_pdu(
+                nearby.service_dialup(BT_PHONE),
+                numero=form.phoneno.data,
+                message=form.textsms.data
+            )   
         except OSError :
             feedback = 'Autorisation refusée'
 

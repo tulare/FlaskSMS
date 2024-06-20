@@ -7,6 +7,7 @@ __all__ = [
 ]
 
 import sys
+import logging
 import time
 from datetime import datetime
 
@@ -213,18 +214,19 @@ class BTClient(object) :
 
     def _send(self, message, wait=1) :
         ret = self._sock.send(message + '\r\n')
+        logging.debug(f'_send: {message} -> {ret}')
         time.sleep(wait)
 
     def _recv(self, bufsize=8) :
         response = b''
         while True :
             try :
-                response += self._sock.recv(bufsize)
-                #print('.', end='', file=sys.stderr)
-            except :
-                #print(']', file=sys.stderr)
+                chunk = self._sock.recv(bufsize)
+                logging.debug(f'_recv: chunk: {len(chunk)} <- {chunk}')
+                response += chunk
+            except OSError as e :
                 break
-        
+        logging.debug(f'_recv: {len(response)} <- {response}')
         return response
 
     def send(self, message, wait=1, bufsize=8) :
