@@ -10,7 +10,7 @@ __all__ = [
 
 import re
 import logging
-from enum import Enum
+import enum
 from .core import BTClient
 from .pdu import decodeSmsPdu, encodeSmsSubmitPdu
 
@@ -18,9 +18,21 @@ from .pdu import decodeSmsPdu, encodeSmsSubmitPdu
 
 # ----------------------------------------------------------
 
-class SMSFormat(Enum) :
-    PDU = 0
+class SMSFormat(enum.IntEnum) :
+    PDU  = 0
     TEXT = 1
+
+class SMSFilter(enum.Enum) :
+    REC_UNREAD = 0, "REC UNREAD"
+    REC_READ   = 1, "REC READ"
+    STO_UNSENT = 2, "STO UNSENT"
+    STO_SENT   = 3, "STO SENT"
+    ALL        = 4, "ALL"
+    def __new__(cls, code, label) :
+        entry = object.__new__(cls)
+        entry.code = entry._value_ = code
+        entry.label = label
+        return entry
 
 # ----------------------------------------------------------
 
@@ -42,7 +54,7 @@ class SMS :
     def mode(self, mode) :
         mode = SMSFormat(mode)
         with BTClient(self._service) as bt_client :
-            bt_client.send(f'AT+CMGF={mode.value}', wait=1, bufsize=32)
+            bt_client.send(f'AT+CMGF={mode}', wait=1, bufsize=32)
         
     def getMessage(self, index, storage="SM") :
         ret = get_sms(self._service, index, encoding=self._encoding, storage=storage)
@@ -52,8 +64,8 @@ class SMS :
         ret = send_sms_pdu(self._service, numero, message)
         return ret
 
-    def listMessages(self, retries=10, storage="SM") :
-        sms_data_pdu = get_all_sms_pdu(self._service, retries=retries, storage=storage)
+    def listMessages(self, retries=20, storage="SM", filter_by=SMSFilter.ALL) :
+        sms_data_pdu = get_all_sms_pdu(self._service, retries=retries, storage=storage, filter_by=filter_by)
         ret = parse_messages_pdu(sms_data_pdu)
         return ret
 
@@ -113,29 +125,45 @@ def parse_messages_pdu(messages_data) :
     for msg in messages_list :
         # scinder chaque message en header + body
         header, body = [x for x in msg.split(b'\r\n') if x != b'']
-        record = decodeSmsPdu(body)
+        slot, filter_type, _, _ = header.decode().split(',')
+        record = {
+            'slot' : int(slot),
+            'reference' : None,
+            'filter_type' : SMSFilter(int(filter_type)),
+            'parts' : 1,
+            'time' : None,
+            'validity' : None
+        }
+        record.update(decodeSmsPdu(body))
         if 'udh' in record :
             # indique un message composé
             for udh in record['udh'] :
                 if udh.number == 1 :
-                    record.update({'reference' : udh.reference, 'parts' : udh.parts})
+                    record.update({
+                        'reference' : udh.reference,
+                        'parts' : udh.parts
+                    })
                     messages.append(record)
                 else :
                     for message in filter(lambda x : x.get('reference',-1) == udh.reference, messages) :
                         message['text'] += record.get('text')
         else :
             # message simple
-            record.update({'reference' : None, 'parts' : 1 })
             messages.append(record)
 
     return messages
 
 # ----------------------------------------------------------
 
-def bt_cmd(bt_client, cmd, wait=1) :
-    ret = bt_client.send(cmd, wait)
-    logging.debug(f'{cmd} -> {ret}')
-    return ret
+def ask(service, cmd, wait=1, bufsize=32) :
+    response = b''
+
+    with BTClient(service) as bt_client :
+        response = bt_client.send(cmd, wait=wait, bufsize=bufsize)
+
+    print(response.decode())
+    
+    return response
 
 # ----------------------------------------------------------
 
@@ -353,7 +381,7 @@ def delete_sms(service, index, storage="SM") :
 
 # ----------------------------------------------------------
 
-def get_all_sms(service, retries=10, storage="SM") :
+def get_all_sms(service, retries=10, storage="SM", filter_by=SMSFilter.ALL) :
 
     data = b''
     
@@ -368,7 +396,7 @@ def get_all_sms(service, retries=10, storage="SM") :
             set_sms_storage(bt_client, storage_1="SM")
 
         for r in range(retries) :
-            response = bt_client.send('AT+CMGL="ALL"', wait=3, bufsize=64)
+            response = bt_client.send(f'AT+CMGL="{filter_by.label}"', wait=3, bufsize=64)
             indexes = re.findall(b'\\+CMGL:([0-9]+)', response)
             if len(indexes) > 0 :
                 data = response
@@ -384,7 +412,7 @@ def get_all_sms(service, retries=10, storage="SM") :
 
 # ----------------------------------------------------------
 
-def get_all_sms_pdu(service, retries=10, storage="SM") :
+def get_all_sms_pdu(service, retries=20, storage="SM", filter_by=SMSFilter.ALL) :
 
     data = b''
     
@@ -399,16 +427,12 @@ def get_all_sms_pdu(service, retries=10, storage="SM") :
             set_sms_storage(bt_client, storage_1="SM")
 
         for r in range(retries) :
-            # "ALL" = 4 en mode PDU
-            response = bt_client.send('AT+CMGL=4', wait=3, bufsize=64)
+            response = bt_client.send(f'AT+CMGL={filter_by.value}', wait=2, bufsize=64)
             indexes = re.findall(b'\\+CMGL:([0-9]+)', response)
             if len(indexes) > 0 :
                 data = response
                 break
 
-        # revenir en mode binaire PDU
-        set_sms_mode(bt_client)
-        
         # revenir au storage "SM"
         set_sms_storage(bt_client, storage_1="SM")
     
