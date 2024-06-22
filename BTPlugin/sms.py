@@ -47,7 +47,7 @@ class SMS :
         response = b''
         with BTClient(self._service) as bt_client :
             response = bt_client.send('AT+CMGF?', wait=1, bufsize=32)
-        mode, = re.findall(b'\\+CMGF:([0-9]+)', response)
+        mode, = parse_response(response)
         return SMSFormat(int(mode))
 
     @mode.setter
@@ -70,8 +70,55 @@ class SMS :
         return ret
 
     def getServiceCenter(self) :
-        ret = get_smsc(self._service)
+        response = get_smsc(self._service)
+        ret = parse_response(response)
         return ret
+
+    @property
+    def phoneManufacturer(self) :
+        response = at_cmd(self._service, 'AT+CGMI')
+        ret = parse_response(response)
+        return ret
+
+    @property
+    def phoneModel(self) :
+        response = at_cmd(self._service, 'AT+CGMM')
+        ret = parse_response(response)
+        return ret
+
+    @property
+    def softwareVersion(self) :
+        response = at_cmd(self._service, 'AT+CGMR')
+        ret = parse_response(response)
+        return ret
+
+    @property
+    def phoneIMEI(self) :
+        response = at_cmd(self._service, 'AT+CGSN')
+        ret = parse_response(response)
+        return ret
+
+    @property
+    def phoneIMSI(self) :
+        response = at_cmd(self._service, 'AT+CIMI')
+        ret = parse_response(response)
+        return ret
+
+# ----------------------------------------------------------
+
+def parse_response(response_data) :
+    # identification commande
+    commande, = re.findall(b'AT(\\+....)', response_data)
+    
+    # suppression header, trailer
+    data = response_data.partition(b'\r\n')[-1]
+    data = data.rpartition(b'OK\r\n')[0]
+
+    # découpage en liste de résultats
+    ret_list = [x.strip() for x in data.split(commande + b':') if x != b'']
+
+    return ret_list
+
 
 # ----------------------------------------------------------
 
@@ -114,13 +161,7 @@ def parse_messages(messages_data) :
 def parse_messages_pdu(messages_data) :
 
     messages = []
-
-    # suppression header, trailer
-    data = messages_data.partition(b'\r\n')[-1]
-    data = data.rpartition(b'OK\r\n')[0]
-
-    # scinder en une liste de messages
-    messages_list = [x.strip() for x in data.split(b'+CMGL:') if x != b'']
+    messages_list = parse_response(messages_data)
 
     for msg in messages_list :
         # scinder chaque message en header + body
@@ -155,15 +196,18 @@ def parse_messages_pdu(messages_data) :
 
 # ----------------------------------------------------------
 
-def ask(service, cmd, wait=1, bufsize=32) :
+def at_cmd(service, cmd, wait=1, bufsize=32) :
     response = b''
 
     with BTClient(service) as bt_client :
         response = bt_client.send(cmd, wait=wait, bufsize=bufsize)
-
-    print(response.decode())
     
     return response
+
+# ----------------------------------------------------------
+
+def ask(service, cmd, wait=1, bufsize=32) :
+    print(at_cmd(service, cmd=cmd, wait=wait, bufsize=bufsize).decode())
 
 # ----------------------------------------------------------
 

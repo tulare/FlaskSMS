@@ -21,5 +21,4 @@ telephone = os.environ.get('BT_PHONE')
 dialup = nbt.service_dialup(telephone)
 serial = nbt.service_serial(telephone)
 
-objsms = SMS(serial)
 

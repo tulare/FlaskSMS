@@ -3,7 +3,8 @@
 __all__ = [
     'list_devices',
     'BTNearbyDevices',
-    'BTClient'
+    'BTSERVICES',
+    'BTClient',
 ]
 
 import sys
@@ -14,6 +15,7 @@ from datetime import datetime
 import contribs
 import bluetooth
 
+# --------------------------------------------------------------------------
 
 def list_devices() :
     try :
@@ -30,6 +32,8 @@ def list_devices() :
 
     return html
 
+
+# --------------------------------------------------------------------------
 
 # Bluetooth Devices
 
@@ -63,19 +67,27 @@ class BTDevice(object) :
             self._addr, self._name, self._classe
         )
 
+# --------------------------------------------------------------------------
+
 # Bluetooth Services
 
+BTSERVICES = {
+    name.replace('_CLASS','') : bluetooth.__dict__.get(name)
+    for name in dir(bluetooth)
+    if name.endswith('_CLASS')
+
+}
 NO_BTSERVICE = '00:00:00:00:00:00', -1
 
-class BTService(object) :
+class BTService :
 
     def __init__(self, host, name, description, port,
                  protocol, rawrecord, service_classes,
                  profiles, provider, service_id, handle) :
         self._host = host
-        self._name = name
+        self._name = (name or b'').decode()
         self._description = description
-        self._port = port
+        self._port = port or float('nan')
         self._protocol = protocol
         self._rawrecord = rawrecord
         self._service_classes = service_classes
@@ -97,14 +109,20 @@ class BTService(object) :
         return self._port
 
     @property
+    def protocol(self) :
+        return self._protocol
+
+    @property
     def connection(self) :
         return self._host, self._port
         
     def __repr__(self) :
-        return "{}(host='{}', name={}, description='{}', port={}, protocol='{}')".format(
-            self.__class__.__name__,
-            self._host, self._name, self._description, self._port, self._protocol
+        return (
+            f"{self.__class__.__name__}(name='{self.name}', host='{self.host}', " +
+            f"port={self.port}, protocol='{self.protocol}')"
         )
+        
+# --------------------------------------------------------------------------
 
 # Bluetooth Nearby Devices
 
@@ -144,12 +162,14 @@ class BTNearbyDevices(object) :
 
     def browse_services(self, uuid=None) :
         services = dict()
+        list_uuid = BTSERVICES.values() if uuid is None else [uuid]
         for dev in self._devices :
             services[dev.name] = [
-                BTService(*serv.values())
-                for serv in bluetooth.find_service(
+                BTService(*_serv.values())
+                for _uuid in list_uuid
+                for _serv in bluetooth.find_service(
                     address=dev.addr,
-                    uuid=uuid
+                    uuid=_uuid
                 )
             ]
 
@@ -188,6 +208,8 @@ class BTNearbyDevices(object) :
     @property
     def names(self) :
         return [ dev.name for dev in self._devices ]
+
+# --------------------------------------------------------------------------
 
 # Bluetooth Client for RFCOMM Service
 
