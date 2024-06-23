@@ -55,6 +55,16 @@ class SMS :
         mode = SMSFormat(mode)
         with BTClient(self._service) as bt_client :
             bt_client.send(f'AT+CMGF={mode}', wait=1, bufsize=32)
+
+    @property
+    def storage(self) :
+        response = at_cmd(self._service, 'AT+CPMS?')
+        ret = parse_response(response)
+        return ret
+
+    @storage.setter
+    def storage(self, storage) :
+        at_cmd(self._service, f'AT+CPMS={storage}')
         
     def getMessage(self, index, storage="SM") :
         ret = get_sms(self._service, index, encoding=self._encoding, storage=storage)
@@ -107,6 +117,12 @@ class SMS :
 # ----------------------------------------------------------
 
 def parse_response(response_data) :
+    ret_list = []
+
+    # cas limite
+    if response_data == b'' :
+        return ret_list
+    
     # identification commande
     commande, = re.findall(b'AT(\\+....)', response_data)
     

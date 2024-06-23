@@ -3,12 +3,13 @@
 __all__ = [
     'list_devices',
     'BTNearbyDevices',
-    'BTSERVICES',
+    'BTServiceEnum',
     'BTClient',
 ]
 
 import sys
 import logging
+import enum
 import time
 from datetime import datetime
 
@@ -71,12 +72,14 @@ class BTDevice(object) :
 
 # Bluetooth Services
 
-BTSERVICES = {
-    name.replace('_CLASS','') : bluetooth.__dict__.get(name)
-    for name in dir(bluetooth)
-    if name.endswith('_CLASS')
-
-}
+BTServiceEnum = enum.StrEnum(
+    'BTService',
+    {
+        name.replace('_CLASS','') : bluetooth.__dict__.get(name)
+        for name in dir(bluetooth)
+        if name.endswith('_CLASS')
+    }
+)
 NO_BTSERVICE = '00:00:00:00:00:00', -1
 
 class BTService :
@@ -162,7 +165,7 @@ class BTNearbyDevices(object) :
 
     def browse_services(self, uuid=None) :
         services = dict()
-        list_uuid = BTSERVICES.values() if uuid is None else [uuid]
+        list_uuid = [uuid for uuid in BTServiceEnum] if uuid is None else [uuid]
         for dev in self._devices :
             services[dev.name] = [
                 BTService(*_serv.values())
@@ -190,16 +193,16 @@ class BTNearbyDevices(object) :
         return addr, services[0]['port']
 
     def service_dialup(self, name) :
-        return self.find_service(name, uuid=bluetooth.DIALUP_NET_CLASS)
+        return self.find_service(name, uuid=BTServiceEnum.DIALUP_NET)
 
     def service_serial(self, name) :
-        return self.find_service(name, uuid=bluetooth.SERIAL_PORT_CLASS)
+        return self.find_service(name, uuid=BTServiceEnum.SERIAL_PORT)
 
     def service_obexpush(self, name) :
-        return self.find_service(name, uuid=bluetooth.OBEX_OBJPUSH_CLASS)
+        return self.find_service(name, uuid=BTServiceEnum.OBEX_OBJPUSH)
 
     def service_obextrans(self, name) :
-        return self.find_service(name, uuid=bluetooth.OBEX_FILETRANS_CLASS)
+        return self.find_service(name, uuid=BTServiceEnum.OBEX_FILETRANS)
 
     @property
     def devices(self) :
