@@ -11,6 +11,8 @@ __all__ = [
 import re
 import logging
 import enum
+import collections
+
 from .core import BTClient
 from .pdu import decodeSmsPdu, encodeSmsSubmitPdu
 
@@ -18,21 +20,26 @@ from .pdu import decodeSmsPdu, encodeSmsSubmitPdu
 
 # ----------------------------------------------------------
 
-class SMSFormat(enum.IntEnum) :
-    PDU  = 0
-    TEXT = 1
+class IntAutoEnum(enum.IntEnum) :
+    def __new__(cls, *args) :
+        value = len(cls.__members__)
+        obj = int.__new__(cls, value)
+        obj._value_ = value
+        return obj
 
-class SMSFilter(enum.Enum) :
-    REC_UNREAD = 0, "REC UNREAD"
-    REC_READ   = 1, "REC READ"
-    STO_UNSENT = 2, "STO UNSENT"
-    STO_SENT   = 3, "STO SENT"
-    ALL        = 4, "ALL"
-    def __new__(cls, code, label) :
-        entry = object.__new__(cls)
-        entry.code = entry._value_ = code
-        entry.label = label
-        return entry
+class SMSFormat(IntAutoEnum) :
+    PDU  = ()
+    TEXT = ()
+
+class SMSFilter(IntAutoEnum) :
+    REC_UNREAD = ()
+    REC_READ   = ()
+    STO_UNSENT = ()
+    STO_SENT   = ()
+    ALL        = ()
+
+    def __init__(self, *args) :
+        self.label = self.name.replace('_',' ')
 
 # ----------------------------------------------------------
 
@@ -41,6 +48,8 @@ class SMS :
     def __init__(self, service, encoding='utf-8') :
         self._service = service
         self._encoding = encoding
+
+    # --- Properties ----------------------------------------
 
     @property
     def mode(self) :
@@ -59,29 +68,21 @@ class SMS :
     @property
     def storage(self) :
         response = at_cmd(self._service, 'AT+CPMS?')
-        ret = parse_response(response)
-        return ret
+        data, = parse_response(response)
+        values = data.decode().split(',')
+        storage = [(values[n].strip('"'), int(values[n+1]), int(values[n+2])) for n in range(0,len(values),3)]
+        return storage
 
     @storage.setter
     def storage(self, storage) :
         at_cmd(self._service, f'AT+CPMS={storage}')
-        
-    def getMessage(self, index, storage="SM") :
-        ret = get_sms(self._service, index, encoding=self._encoding, storage=storage)
-        return ret        
 
-    def sendMessage(self, numero, message) :
-        ret = send_sms_pdu(self._service, numero, message)
-        return ret
-
-    def listMessages(self, retries=20, storage="SM", filter_by=SMSFilter.ALL) :
-        sms_data_pdu = get_all_sms_pdu(self._service, retries=retries, storage=storage, filter_by=filter_by)
-        ret = parse_messages_pdu(sms_data_pdu)
-        return ret
-
-    def getServiceCenter(self) :
+    @property
+    def serviceCenter(self) :
         response = get_smsc(self._service)
-        ret = parse_response(response)
+        data, = parse_response(response)
+        values = data.decode().split(',')
+        ret = values[0].strip('"'), int(values[1])
         return ret
 
     @property
@@ -112,6 +113,46 @@ class SMS :
     def phoneIMSI(self) :
         response = at_cmd(self._service, 'AT+CIMI')
         ret = parse_response(response)
+        return ret
+
+    # --- Methods --------------------------------------------
+
+    def getMessage(self, index, storage='SM') :
+        ret = get_sms(self._service, index, encoding=self._encoding, storage=storage)
+        return ret        
+
+    def sendMessage(self, numero, message) :
+        ret = send_sms_pdu(self._service, numero, message)
+        return ret
+
+    def storeMessage(self, numero, message, storage='SM', filter_by=SMSFilter.STO_UNSENT) :
+        ret = store_sms(self._service, numero, message, storage, filter_by)
+        return ret
+
+    def countMessages(self, storage='SM') :
+        logging.debug(f'countMessages: storage={storage}')
+        cur_storage = self.storage
+
+        # a-t-on directement l'information ?
+        if cur_storage[0][0] == storage :
+            return cur_storage[0][1:]
+
+        # on change de storage le temps de récupérer l'info
+        self.storage = f'"{storage}"'
+        count = self.storage[0][1:]
+        self.storage = f'"{cur_storage[0][0]}"'
+
+        return count
+
+    def listMessages(self, retries=20, storage='SM', filter_by=SMSFilter.ALL) :
+        logging.debug(f'listMessages: storage={storage}, filter_by={filter_by!r}')
+        ret = []
+        # a-t-on des messages dans ce storage ?
+        count, total = self.countMessages(storage=storage)
+        logging.debug(f'listMessages: storage={storage}, count={count}, total={total}')
+        if count > 0 :
+            sms_data_pdu = get_all_sms_pdu(self._service, retries=retries, storage=storage, filter_by=filter_by)
+            ret = parse_messages_pdu(sms_data_pdu)
         return ret
 
 # ----------------------------------------------------------
@@ -327,7 +368,7 @@ def get_sms(service, index, wait=3, encoding='utf-8', storage="SM") :
 
 # ----------------------------------------------------------
 
-def store_sms(service, numero, message, storage="SM") :
+def store_sms(service, numero, message, storage="SM", filter_by=SMSFilter.STO_UNSENT) :
 
     response = b''
 
@@ -342,37 +383,7 @@ def store_sms(service, numero, message, storage="SM") :
             set_sms_storage(bt_client, storage_2="SM")
 
         # stockage du sms en mémoire
-        bt_client.send(f'AT+CMGW="{numero}",,"REC UNREAD"')
-        response = bt_client.send(f'{message}{chr(0x1a)}', wait=3, bufsize=32)
-
-        # revenir au mode binaire PDU
-        set_sms_mode(bt_client)
-
-        # revenir au storage "SM"
-        if storage == "ME" :
-            set_sms_storage(bt_client, storage_2="SM")
-
-    slot = re.findall('\+CMGW:(\w+)', response.decode())
-    return slot
-
-# ----------------------------------------------------------
-
-def store_draft_sms(service, numero, message, storage="SM") :
-
-    response = b''
-
-    with BTClient(service) as bt_client :
-        # passer en mode texte
-        set_sms_mode(bt_client, SMSFormat.TEXT)
-
-        # sélectionner le storage "SM" ou "ME"
-        if storage == "ME" :
-            set_sms_storage(bt_client, storage_2=storage)
-        else :
-            set_sms_storage(bt_client, storage_2="SM")
-
-        # stockage du sms en mémoire
-        bt_client.send(f'AT+CMGW="{numero}",,"STO UNSENT"')
+        bt_client.send(f'AT+CMGW="{numero}",,"{filter_by.label}"')
         response = bt_client.send(f'{message}{chr(0x1a)}', wait=3, bufsize=32)
 
         # revenir au mode binaire PDU
@@ -487,7 +498,7 @@ def get_all_sms_pdu(service, retries=20, storage="SM", filter_by=SMSFilter.ALL) 
             set_sms_storage(bt_client, storage_1="SM")
 
         for r in range(retries) :
-            response = bt_client.send(f'AT+CMGL={filter_by.value}', wait=2, bufsize=64)
+            response = bt_client.send(f'AT+CMGL={filter_by}', wait=2, bufsize=64)
             indexes = re.findall(b'\\+CMGL:([0-9]+)', response)
             if len(indexes) > 0 :
                 data = response
