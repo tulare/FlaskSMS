@@ -7,6 +7,9 @@ name = "pypi"
 lxml = "*"
 Flask = "*"
 WTForms = "*"
+pybluez = {file = ".contribs\\PyBluez-0.30-cp311-cp311-win_amd64.whl"}
+smspdudecoder = "*"
+pyobex = "*"
 
 [dev-packages]
 ipython = "*"

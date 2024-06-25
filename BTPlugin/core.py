@@ -13,7 +13,6 @@ import enum
 import time
 from datetime import datetime
 
-import contribs
 import bluetooth
 
 # --------------------------------------------------------------------------
