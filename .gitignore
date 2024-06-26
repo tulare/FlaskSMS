@@ -1,5 +1,6 @@
 # project specific
 pipenv*.cmd
+pypi*.cmd
 run*.cmd
 
 # Byte-compiled / optimized / DLL files
