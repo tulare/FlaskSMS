@@ -17,7 +17,6 @@ smspdudecoder = "*"
 pyobex = "*"
 
 [dev-packages]
-pypiserver = "*"
 
 [requires]
 python_version = "3.11"
